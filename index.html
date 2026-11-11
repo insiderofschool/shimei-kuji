@@ -221,9 +221,11 @@ table.rec{width:100%;border-collapse:collapse;font-size:.9rem}
         <textarea id="backupText" spellcheck="false" style="min-height:100px"></textarea>
         <div class="row">
           <button class="btn" id="copyBackup" type="button">コピーする</button>
+          <button class="btn" id="shareLink" type="button">名簿を送るリンクを作る</button>
           <button class="btn" id="mergeBackup" type="button">今の記録に合わせる</button>
           <button class="btn danger" id="loadBackup" type="button">置き換えて読み込む</button>
         </div>
+        <p class="muted" style="margin:0">「名簿を送るリンクを作る」は、名簿と記録を含んだ長いリンクを作ってコピーします。自分宛てのメールなどで送り、別の端末でそのリンクを開くと、この欄に自動で入ります（名簿はリンクの「#」より後ろに入るので、サーバーには送られません）。記録が多いときは名簿と回数だけのリンクになります。</p>
         <p class="muted" style="margin:0">「今の記録に合わせる」は、貼り付けた記録のうちこの端末にないものだけを足します（同じ日時・同じ生徒の記録は二重になりません）。クラスと生徒は名前で対応づけます。「置き換えて読み込む」はこの端末の名簿と記録を貼り付けた内容に丸ごと置き換えます。</p>
       </div>
       <p id="msg" role="status"></p>
@@ -333,23 +335,14 @@ table.rec{width:100%;border-collapse:collapse;font-size:.9rem}
     s.count++;s.done=true;c.log.push(s.id);if(c.log.length>30)c.log.shift();
     c.history.push({s:s.id,n:s.name,t:Date.now()});if(c.history.length>HISTORY_MAX)c.history.shift();
     save();
+    // 押した瞬間に表示する（くじを回す演出はなし。名前が少し大きく出て縮むだけ）
+    lastId=s.id;
     var nameEl=$('resultName');
-    var reduce=window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    function land(){
-      lastId=s.id;busy=false;$('pickBtn').disabled=false;
-      showName(nameEl,s);nameEl.className='name land';
-      $('resultLabel').textContent='当たったのは';
-      render();
-    }
-    if(reduce||res.cand.length<2){nameEl.className='name';land();return}
-    busy=true;$('pickBtn').disabled=true;
-    nameEl.className='name';$('resultLabel').textContent='抽選中';
-    var steps=16,i=0;
-    (function tick(){
-      if(i>=steps){land();return}
-      showName(nameEl,res.cand[Math.floor(Math.random()*res.cand.length)]);
-      i++;setTimeout(tick,45+i*i*0.9);
-    })();
+    showName(nameEl,s);nameEl.className='name';
+    void nameEl.offsetWidth;   // アニメーションを毎回やり直すための再計算
+    nameEl.className='name land';
+    $('resultLabel').textContent='当たったのは';
+    render();
   }
 
   function undo(){
@@ -625,6 +618,27 @@ table.rec{width:100%;border-collapse:collapse;font-size:.9rem}
   $('saveHistory').addEventListener('click',function(){var c=cls();downloadCSV('指名記録_'+c.name,historyRows(c))});
   $('copyBackup').addEventListener('click',function(){copyText($('backupText'),JSON.stringify(state),'バックアップ')});
   function parseBackup(){try{var s=JSON.parse($('backupText').value);return valid(s)?normalize(s):null}catch(e){return null}}
+  // 名簿を URL の # 以降に入れて別の端末へ渡す（# より後ろはサーバーに送られない）
+  function b64enc(str){return btoa(unescape(encodeURIComponent(str))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'')}
+  function b64dec(b){b=b.replace(/-/g,'+').replace(/_/g,'/');while(b.length%4)b+='=';return decodeURIComponent(escape(atob(b)))}
+  function shareLink(){
+    var s=JSON.parse(JSON.stringify(state)), partial=false;
+    var make=function(){return location.href.split('#')[0]+'#import='+b64enc(JSON.stringify(s))};
+    var url=make();
+    if(url.length>8000){s.classes.forEach(function(c){c.history=[];c.log=[]});partial=true;url=make()}  // 長すぎるリンクはメールで壊れやすいので記録を外す
+    return {url:url,partial:partial};
+  }
+  function readShare(){
+    var m=/^#import=(.+)$/.exec(location.hash);if(!m)return;
+    try{history.replaceState(null,'',location.pathname+location.search)}catch(e){}   // 再読み込みで二度出ないように
+    try{
+      var json=b64dec(m[1]), s=JSON.parse(json);if(!valid(s))throw 0;
+      openSub('backup',true);$('backupText').value=json;
+      say('リンクに名簿が入っていました。「置き換えて読み込む」か「今の記録に合わせる」を2回押してください。');
+      $('mergeBackup').focus();
+    }catch(e){say('リンクの名簿を読めませんでした。')}
+  }
+  $('shareLink').addEventListener('click',function(){var r=shareLink();copyText($('backupText'),r.url,r.partial?'リンク（記録が多いので名簿と回数だけ）':'名簿と記録のリンク')});
   armed($('loadBackup'),function(){
     var s=parseBackup();
     if(!s){say('読み込めませんでした。コピーした文字列を最初から最後まで貼り付けてください。');return}
@@ -638,6 +652,7 @@ table.rec{width:100%;border-collapse:collapse;font-size:.9rem}
   });
 
   render();
+  readShare();
 })();
 </script>
 </body>
