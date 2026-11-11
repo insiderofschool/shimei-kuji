@@ -90,6 +90,8 @@ main{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:16px;
 .note{background:#fbf2cf;background:color-mix(in srgb,var(--chalk) 28%,var(--surface));color:var(--ink);border-radius:8px;padding:8px 12px;font-size:.875rem;margin:0}
 .chips{display:grid;grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:8px}
 .chip{position:relative;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:8px 30px 8px 10px;text-align:left;cursor:pointer;font-weight:700;overflow-wrap:anywhere;line-height:1.3;min-height:44px}
+.chip .no{display:inline-block;min-width:1.6em;margin-right:4px;font-size:.8rem;color:var(--muted);font-variant-numeric:tabular-nums}
+.result .name .no{font-size:.4em;opacity:.8;margin-right:.3em;vertical-align:middle;font-variant-numeric:tabular-nums}
 .chip .n{position:absolute;right:6px;top:6px;min-width:20px;text-align:center;font-size:.75rem;font-weight:700;color:var(--muted);font-variant-numeric:tabular-nums;border-radius:999px;background:var(--surface);border:1px solid var(--line);padding:0 4px}
 .chip.done{background:#dcebe4;background:color-mix(in srgb,var(--accent) 16%,var(--surface));border-color:var(--accent)}
 .chip.done::after{content:"済";position:absolute;right:7px;bottom:5px;font-size:.7rem;color:var(--accent)}
@@ -172,8 +174,8 @@ table.rec{width:100%;border-collapse:collapse;font-size:.9rem}
           <input type="text" id="className" style="width:180px">
           <button class="btn" id="renameBtn" type="button">名前を変更</button>
         </div>
-        <label for="rosterText">名簿（1行に1人。Excelの名前の列をそのまま貼り付けできます。同じ名前の人は回数を引き継ぎます）</label>
-        <textarea id="rosterText" spellcheck="false" placeholder="1行に1人ずつ入力"></textarea>
+        <label for="rosterText">名簿（1行に1人。Excel の「番号」と「名前」の2列を選んでそのまま貼り付けできます。名前だけなら上から 1, 2, 3… と番号が付きます。同じ名前の人は回数を引き継ぎます）</label>
+        <textarea id="rosterText" spellcheck="false" placeholder="1 山田&#10;2 鈴木&#10;…（番号なしで名前だけでも可）"></textarea>
         <div class="row">
           <button class="btn primary" id="saveRoster" type="button">名簿を保存</button>
           <label for="numCount">または出席番号で作る</label>
@@ -233,8 +235,18 @@ table.rec{width:100%;border-collapse:collapse;font-size:.9rem}
   var undoStack=[];      // 取り消し用（このページを開いている間だけ）
   var lastId=null, busy=false;
 
-  function mkStudents(names){return names.map(function(n){return {id:uid(),name:n,count:0,done:false,absent:false,care:false}})}
-  function numbers(n){var a=[];for(var i=1;i<=n;i++)a.push(i+'番');return a}
+  function mkStudents(names){return names.map(function(n,i){return {id:uid(),no:i+1,name:n,count:0,done:false,absent:false,care:false}})}
+  function numbers(n){var a=[];for(var i=1;i<=n;i++)a.push(String(i));return a}
+  // 表示用の名前。「3 山田」のように番号を前に付ける（名前が番号そのものなら番号だけ）
+  function label(s){return (s.no&&String(s.no)!==s.name)?s.no+' '+s.name:s.name}
+  // 名簿の1行を「番号＋名前」に分ける。番号がなければ行の順番を使う
+  function parseLine(line,idx){
+    line=line.replace(/^[０-９]+/,function(z){return z.replace(/[０-９]/g,function(ch){return String.fromCharCode(ch.charCodeAt(0)-0xFEE0)})}); // 先頭の全角数字を半角に
+    var m=/^(\d{1,3})[\s.．、)）:：]*(.*)$/.exec(line);
+    if(m&&m[2])return {no:parseInt(m[1],10),name:m[2].trim()};
+    if(m&&!m[2])return {no:parseInt(m[1],10),name:m[1]};
+    return {no:idx+1,name:line};
+  }
   function mkClass(name,names,sample){return {id:uid(),name:name,mode:'round',sample:!!sample,students:mkStudents(names),log:[],history:[]}}
   function defaults(){var a=mkClass('1年9組',numbers(26),true),b=mkClass('1年10組',numbers(26),true);return {current:a.id,classes:[a,b]}}
 
@@ -242,8 +254,10 @@ table.rec{width:100%;border-collapse:collapse;font-size:.9rem}
   function normalize(s){
     s.classes.forEach(function(c){
       c.id=c.id||uid();c.mode=(c.mode==='weight'||c.mode==='random')?c.mode:'round';c.log=Array.isArray(c.log)?c.log.slice(-30):[];
-      c.students=c.students.filter(function(x){return x&&typeof x.name==='string'}).map(function(x){
-        return {id:x.id||uid(),name:x.name,count:Math.max(0,x.count|0),done:!!x.done,absent:!!x.absent,care:!!x.care}});
+      c.students=c.students.filter(function(x){return x&&typeof x.name==='string'}).map(function(x,i){
+        var no=(x.no|0)>0?x.no|0:i+1, name=x.name;
+        if(x.no==null&&name===no+'番')name=String(no);   // 以前の仮名簿「1番」を番号だけにする
+        return {id:x.id||uid(),no:no,name:name,count:Math.max(0,x.count|0),done:!!x.done,absent:!!x.absent,care:!!x.care}});
       c.history=Array.isArray(c.history)?c.history.filter(function(h){return h&&typeof h.s==='string'&&typeof h.t==='number'}).map(function(h){return {s:h.s,n:typeof h.n==='string'?h.n:'',t:h.t}}).slice(-HISTORY_MAX):[];
     });
     if(!s.classes.some(function(c){return c.id===s.current}))s.current=s.classes[0].id;
@@ -316,7 +330,7 @@ table.rec{width:100%;border-collapse:collapse;font-size:.9rem}
     var reduce=window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     function land(){
       lastId=s.id;busy=false;$('pickBtn').disabled=false;
-      nameEl.textContent=s.name;nameEl.className='name land';
+      showName(nameEl,s);nameEl.className='name land';
       $('resultLabel').textContent='当たったのは';
       render();
     }
@@ -326,7 +340,7 @@ table.rec{width:100%;border-collapse:collapse;font-size:.9rem}
     var steps=16,i=0;
     (function tick(){
       if(i>=steps){land();return}
-      nameEl.textContent=res.cand[Math.floor(Math.random()*res.cand.length)].name;
+      showName(nameEl,res.cand[Math.floor(Math.random()*res.cand.length)]);
       i++;setTimeout(tick,45+i*i*0.9);
     })();
   }
@@ -347,13 +361,19 @@ table.rec{width:100%;border-collapse:collapse;font-size:.9rem}
     var n=$('resultName');n.textContent='ボタンを押してください';n.className='name idle';
     $('resultLabel').textContent='次に当たるのは';
   }
+  // 大きな表示: 番号を小さく、名前を大きく
+  function showName(el,s){
+    el.textContent='';
+    if(s.no&&String(s.no)!==s.name){var sp=document.createElement('span');sp.className='no';sp.textContent=s.no;el.appendChild(sp)}
+    el.appendChild(document.createTextNode(s.name));
+  }
 
   // ---- 日付 ----
   var WD='日月火水木金土';
   function pad2(n){return (n<10?'0':'')+n}
   function dayKey(t){var d=new Date(t);return d.getFullYear()+'/'+(d.getMonth()+1)+'/'+d.getDate()}
   function fmtDay(t){var d=new Date(t);return (d.getMonth()+1)+'/'+d.getDate()+'（'+WD[d.getDay()]+'）'}
-  function histName(c,h){var s=byId(c,h.s);return s?s.name:(h.n||'（名簿にいない生徒）')}
+  function histName(c,h){var s=byId(c,h.s);return s?label(s):(h.n||'（名簿にいない生徒）')}
 
   // ---- 表示 ----
   function isOpen(id){return $(id).classList.contains('open')}
@@ -380,13 +400,13 @@ table.rec{width:100%;border-collapse:collapse;font-size:.9rem}
       b.className='chip'+mark+(s.id===lastId?' last':'');
       b.setAttribute('aria-pressed',s.absent?'true':'false');
       b.title=s.absent?'欠席中。押すと出席に戻します':'押すと欠席にします';
-      var t=document.createElement('span');t.textContent=s.name;b.appendChild(t);
+      chipLabel(b,s);
       var n=document.createElement('span');n.className='n';n.textContent=s.count;b.appendChild(n);
       b.addEventListener('click',function(){s.absent=!s.absent;save();render()});
       chips.appendChild(b);
     });
     var rec=$('recent');rec.textContent='';
-    var names=c.log.slice(-6).reverse().map(function(id){var f=byId(c,id);return f?f.name:null}).filter(Boolean);
+    var names=c.log.slice(-6).reverse().map(function(id){var f=byId(c,id);return f?label(f):null}).filter(Boolean);
     if(names.length){
       var lead=document.createElement('span');lead.textContent='最近の指名（新しい順）';rec.appendChild(lead);
       names.forEach(function(nm){var sp=document.createElement('span');sp.className='tag';sp.textContent=nm;rec.appendChild(sp)});
@@ -394,7 +414,11 @@ table.rec{width:100%;border-collapse:collapse;font-size:.9rem}
     if(isOpen('editor'))renderCare();
     if(isOpen('records'))renderRecords();
   }
-  function fillEditor(){var c=cls();$('rosterText').value=c.students.map(function(s){return s.name}).join('\n');$('className').value=c.name;renderCare()}
+  function chipLabel(b,s){
+    if(s.no&&String(s.no)!==s.name){var no=document.createElement('span');no.className='no';no.textContent=s.no;b.appendChild(no)}
+    var t=document.createElement('span');t.textContent=s.name;b.appendChild(t);
+  }
+  function fillEditor(){var c=cls();$('rosterText').value=c.students.map(label).join('\n');$('className').value=c.name;renderCare()}
   function renderCare(){
     var c=cls(), box=$('careChips');box.textContent='';
     c.students.forEach(function(s){
@@ -402,8 +426,8 @@ table.rec{width:100%;border-collapse:collapse;font-size:.9rem}
       b.className='chip'+(s.care?' care':'');
       b.setAttribute('aria-pressed',s.care?'true':'false');
       b.title=s.care?'少なめ。押すとふつうに戻します':'押すと少なめにします';
-      var t=document.createElement('span');t.textContent=s.name;b.appendChild(t);
-      b.addEventListener('click',function(){s.care=!s.care;save();renderCare();say(s.name+' を'+(s.care?'「少なめ」にしました。':'ふつうに戻しました。'))});
+      chipLabel(b,s);
+      b.addEventListener('click',function(){s.care=!s.care;save();renderCare();say(label(s)+' を'+(s.care?'「少なめ」にしました。':'ふつうに戻しました。'))});
       box.appendChild(b);
     });
   }
@@ -422,21 +446,25 @@ table.rec{width:100%;border-collapse:collapse;font-size:.9rem}
   // 表の中身を2次元配列で返す（1行目は見出し）。画面・コピー・CSV で共通
   function matrixRows(c,dateLabel){
     var days=dayGroups(c);
-    var head=['名前','累計'].concat(days.map(function(d){return dateLabel(d.t)}));
+    var head=['番号','名前','累計'].concat(days.map(function(d){return dateLabel(d.t)}));
     var rows=c.students.map(function(s){
-      return [s.name,s.count].concat(days.map(function(d){return d.count[s.id]||''}));
+      return [s.no||'',s.name,s.count].concat(days.map(function(d){return d.count[s.id]||''}));
     });
-    var sum=['合計',c.students.reduce(function(a,s){return a+s.count},0)].concat(days.map(function(d){return d.names.length}));
+    var sum=['','合計',c.students.reduce(function(a,s){return a+s.count},0)].concat(days.map(function(d){return d.names.length}));
     return [head].concat(rows,[sum]);
   }
   function renderRecords(){
-    var c=cls(), rows=matrixRows(c,fmtDay);
+    var c=cls();
+    // 画面では番号と名前を1つのセルにまとめる（CSV・コピーでは別の列）
+    var rows=matrixRows(c,fmtDay).map(function(r){return [(r[0]!==''&&String(r[0])!==r[1]?r[0]+' ':'')+r[1]].concat(r.slice(2))});
+    rows[0][0]='名前';
     var head=$('matrixHead');head.textContent='';
-    rows[0].forEach(function(x,i){var th=document.createElement('th');th.textContent=x;th.className=i===1?'num total':(i>1?'num':'');head.appendChild(th)});
+    var cl=function(i){return i===0?'name':i===1?'num total':'num'};
+    rows[0].forEach(function(x,i){var th=document.createElement('th');th.textContent=x;th.className=cl(i);head.appendChild(th)});
     var body=$('recBody');body.textContent='';
     rows.slice(1).forEach(function(r,ri){
       var tr=document.createElement('tr');
-      r.forEach(function(x,i){var td=document.createElement('td');td.textContent=x;td.className=i===0?'name':(i===1?'num total':'num');tr.appendChild(td)});
+      r.forEach(function(x,i){var td=document.createElement('td');td.textContent=x;td.className=cl(i);tr.appendChild(td)});
       if(ri===rows.length-2)tr.style.fontWeight='700';
       body.appendChild(tr);
     });
@@ -451,7 +479,10 @@ table.rec{width:100%;border-collapse:collapse;font-size:.9rem}
     $('recSummary').textContent=h.length?('記録 '+h.length+'件（'+fmtDay(h[0].t)+' 〜 '+fmtDay(h[h.length-1].t)+'、'+groups.length+'日）'):'記録はまだありません。指名すると日時が記録されます。';
   }
   function historyRows(c){
-    return [['日付','時刻','名前']].concat(c.history.map(function(h){var d=new Date(h.t);return [fmtDate(d),pad2(d.getHours())+':'+pad2(d.getMinutes()),histName(c,h)]}));
+    return [['日付','時刻','番号','名前']].concat(c.history.map(function(h){
+      var d=new Date(h.t), s=byId(c,h.s);
+      return [fmtDate(d),pad2(d.getHours())+':'+pad2(d.getMinutes()),s?(s.no||''):'',s?s.name:(h.n||'')];
+    }));
   }
   function fmtDate(d){return d.getFullYear()+'/'+pad2(d.getMonth()+1)+'/'+pad2(d.getDate())}
   function toTSV(rows){return rows.map(function(r){return r.join('\t')}).join('\n')}
@@ -485,7 +516,7 @@ table.rec{width:100%;border-collapse:collapse;font-size:.9rem}
       var map={};   // 相手側の生徒ID → こちらの生徒
       ic.students.forEach(function(is){
         var s=c.students.filter(function(x){return x.name===is.name})[0];
-        if(!s){s={id:uid(),name:is.name,count:0,done:false,absent:is.absent,care:is.care};c.students.push(s);newStudents++}
+        if(!s){s={id:uid(),no:is.no,name:is.name,count:0,done:false,absent:is.absent,care:is.care};c.students.push(s);newStudents++}
         map[is.id]=s;
       });
       var seen={};c.history.forEach(function(h){seen[h.t+'|'+histName(c,h)]=1});
@@ -551,15 +582,16 @@ table.rec{width:100%;border-collapse:collapse;font-size:.9rem}
   $('backupBtn').addEventListener('click',function(){openSub('backup')});
   $('saveRoster').addEventListener('click',function(){
     var c=cls();
-    var names=$('rosterText').value.split(/\r?\n/).map(function(x){return x.replace(/\t/g,' ').trim()}).filter(Boolean);
-    if(!names.length){say('名前を1人以上入力してください。');return}
+    var lines=$('rosterText').value.split(/\r?\n/).map(function(x){return x.replace(/\t/g,' ').trim()}).filter(Boolean);
+    if(!lines.length){say('名前を1人以上入力してください。');return}
     var old=c.students.slice();
-    c.students=names.map(function(n){
-      var i=-1;for(var k=0;k<old.length;k++){if(old[k].name===n){i=k;break}}
-      if(i>=0)return old.splice(i,1)[0];
-      return {id:uid(),name:n,count:0,done:false,absent:false,care:false};
+    c.students=lines.map(function(line,idx){
+      var p=parseLine(line,idx), s=null;
+      for(var k=0;k<old.length;k++){if(old[k].name===p.name){s=old.splice(k,1)[0];break}}
+      if(!s)s={id:uid(),name:p.name,count:0,done:false,absent:false,care:false};
+      s.no=p.no;return s;
     });
-    c.sample=false;undoStack=[];save();render();say(names.length+'人の名簿を保存しました。');
+    c.sample=false;undoStack=[];save();render();say(lines.length+'人の名簿を保存しました。');
   });
   $('makeNumbers').addEventListener('click',function(){
     var n=Math.max(1,Math.min(60,parseInt($('numCount').value,10)||0));
