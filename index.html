@@ -103,6 +103,8 @@ main{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:16px;
 .chip.care{background:#f5e3dc;background:color-mix(in srgb,var(--warn) 14%,var(--surface));border-color:var(--warn)}
 .chip.care::after{content:"少なめ";position:absolute;right:7px;bottom:5px;font-size:.7rem;color:var(--warn)}
 .legend{font-size:.8rem;color:var(--muted);margin:0}
+label.check{display:flex;gap:8px;align-items:flex-start;font-size:.875rem;color:var(--ink);cursor:pointer;flex:1 1 260px;min-height:44px}
+label.check input{width:22px;height:22px;margin:2px 0 0;flex:none}
 .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 .row.between{justify-content:space-between}
 textarea{width:100%;min-height:180px;resize:vertical}
@@ -145,7 +147,6 @@ table.rec{width:100%;border-collapse:collapse;font-size:.9rem}
       <p class="hint">スペースキーでも指名できます</p>
       <div class="stage-actions">
         <button class="btn" id="undoBtn" type="button">今の指名を取り消す</button>
-        <button class="btn" id="newRoundBtn" type="button">一巡をやり直す</button>
       </div>
       <div class="recent" id="recent"></div>
     </section>
@@ -160,15 +161,20 @@ table.rec{width:100%;border-collapse:collapse;font-size:.9rem}
         </div>
       </div>
       <p class="note" id="sampleNote">番号だけの仮の名簿です。「名簿を編集」で実際の名前や人数に置き換えられます。</p>
-      <div class="modes" role="radiogroup" aria-label="選び方">
-        <label><input type="radio" name="mode" id="modeRound" value="round"><span><b>一巡モード</b><small>全員が1回ずつ当たるまで、同じ人は当たりません</small></span></label>
-        <label><input type="radio" name="mode" id="modeWeight" value="weight"><span><b>回数バランスモード</b><small>当たった回数が少ない人ほど当たりやすくなります</small></span></label>
-        <label><input type="radio" name="mode" id="modeRandom" value="random"><span><b>同じ確率モード</b><small>直近5回に当たった人を除いて、全員が同じ確率で当たります</small></span></label>
-      </div>
       <div class="chips" id="chips"></div>
-      <p class="legend">名前を押すと欠席（対象外）に切り替わります。右上の数字は累計で当たった回数です。「最近」は直近5回に当たった人で、しばらく当たりません。</p>
+      <p class="legend" id="legend">名前を押すと欠席（対象外）に切り替わります。右上の数字は累計で当たった回数です。</p>
 
       <div id="editor" class="sub">
+        <h3>選び方（この設定は「名簿を編集」を閉じると見えません）</h3>
+        <div class="modes" role="radiogroup" aria-label="選び方">
+          <label><input type="radio" name="mode" id="modeRound" value="round"><span><b>一巡モード</b><small>全員が1回ずつ当たるまで、同じ人は当たりません</small></span></label>
+          <label><input type="radio" name="mode" id="modeWeight" value="weight"><span><b>回数バランスモード</b><small>当たった回数が少ない人ほど当たりやすくなります</small></span></label>
+          <label><input type="radio" name="mode" id="modeRandom" value="random"><span><b>同じ確率モード</b><small>直近5回に当たった人を除いて、全員が同じ確率で当たります</small></span></label>
+        </div>
+        <div class="row">
+          <label class="check"><input type="checkbox" id="showMarks"> 名簿に「済」「最近」の印と、一巡の残り人数を表示する（生徒に仕組みが分かりやすくなります）</label>
+          <button class="btn" id="newRoundBtn" type="button">一巡をやり直す</button>
+        </div>
         <div class="row">
           <label for="className">クラス名</label>
           <input type="text" id="className" style="width:180px">
@@ -261,6 +267,7 @@ table.rec{width:100%;border-collapse:collapse;font-size:.9rem}
       c.history=Array.isArray(c.history)?c.history.filter(function(h){return h&&typeof h.s==='string'&&typeof h.t==='number'}).map(function(h){return {s:h.s,n:typeof h.n==='string'?h.n:'',t:h.t}}).slice(-HISTORY_MAX):[];
     });
     if(!s.classes.some(function(c){return c.id===s.current}))s.current=s.classes[0].id;
+    s.showMarks=!!s.showMarks;   // 済・最近の印と残り人数を名簿に出すか（既定は出さない）
     return s;
   }
   function load(){try{var s=JSON.parse(localStorage.getItem(KEY));if(valid(s))return normalize(s)}catch(e){}return defaults()}
@@ -382,21 +389,28 @@ table.rec{width:100%;border-collapse:collapse;font-size:.9rem}
     sel.textContent='';
     state.classes.forEach(function(k){var o=document.createElement('option');o.value=k.id;o.textContent=k.name;if(k.id===c.id)o.selected=true;sel.appendChild(o)});
     $('modeRound').checked=c.mode==='round';$('modeWeight').checked=c.mode==='weight';$('modeRandom').checked=c.mode==='random';
+    $('showMarks').checked=state.showMarks;
     $('sampleNote').style.display=c.sample?'':'none';
     $('newRoundBtn').style.display=c.mode==='round'?'':'none';
     var present=c.students.filter(function(s){return !s.absent});
     var left=present.filter(function(s){return !s.done}).length;
     var total=c.students.reduce(function(a,s){return a+s.count},0);
     $('rosterTitle').textContent=c.name+' の名簿（'+c.students.length+'人）';
-    $('roundInfo').textContent=c.mode==='round' ? '今の一巡 残り '+left+'人 / 出席 '+present.length+'人'
+    // 生徒に仕組みが分からないよう、ふだんは出席人数だけを出す
+    var marks=state.showMarks;
+    $('roundInfo').textContent=!marks ? '出席 '+present.length+'人'
+      : c.mode==='round' ? '今の一巡 残り '+left+'人 / 出席 '+present.length+'人'
       : c.mode==='weight' ? '出席 '+present.length+'人（回数の少ない人を優先）'
       : '出席 '+present.length+'人（直近'+COOLDOWN+'回の人を除いて同じ確率）';
     $('totalInfo').textContent='累計 '+total+'回';
+    $('legend').textContent='名前を押すと欠席（対象外）に切り替わります。右上の数字は累計で当たった回数です。'
+      +(marks&&c.mode==='round'?'「済」は今の一巡で当たった人です。':'')
+      +(marks&&c.mode==='random'?'「最近」は直近'+COOLDOWN+'回に当たった人で、しばらく当たりません。':'');
     var chips=$('chips');chips.textContent='';
-    var recent=c.mode==='random'?c.log.slice(-COOLDOWN):[];
+    var recent=(marks&&c.mode==='random')?c.log.slice(-COOLDOWN):[];
     c.students.forEach(function(s){
       var b=document.createElement('button');b.type='button';
-      var mark=s.absent?' absent':(c.mode==='round'&&s.done)?' done':(recent.indexOf(s.id)>=0)?' cool':'';
+      var mark=s.absent?' absent':(marks&&c.mode==='round'&&s.done)?' done':(recent.indexOf(s.id)>=0)?' cool':'';
       b.className='chip'+mark+(s.id===lastId?' last':'');
       b.setAttribute('aria-pressed',s.absent?'true':'false');
       b.title=s.absent?'欠席中。押すと出席に戻します':'押すと欠席にします';
@@ -571,6 +585,7 @@ table.rec{width:100%;border-collapse:collapse;font-size:.9rem}
   $('modeRound').addEventListener('change',function(){cls().mode='round';save();render()});
   $('modeWeight').addEventListener('change',function(){cls().mode='weight';save();render()});
   $('modeRandom').addEventListener('change',function(){cls().mode='random';save();render()});
+  $('showMarks').addEventListener('change',function(e){state.showMarks=e.target.checked;save();render()});
   $('addClass').addEventListener('click',function(){
     var c=mkClass('新しいクラス'+(state.classes.length+1),numbers(40),true);
     state.classes.push(c);state.current=c.id;lastId=null;save();resetStage();
@@ -618,7 +633,7 @@ table.rec{width:100%;border-collapse:collapse;font-size:.9rem}
   armed($('mergeBackup'),function(){
     var s=parseBackup();
     if(!s){say('読み込めませんでした。コピーした文字列を最初から最後まで貼り付けてください。');return}
-    var r=mergeState(state,s);undoStack=[];lastId=null;save();resetStage();render();
+    var r=mergeState(state,s);state.showMarks=!!state.showMarks;undoStack=[];lastId=null;save();resetStage();render();
     say('合わせました。記録を '+r.added+' 件追加'+(r.newClasses?'、クラスを '+r.newClasses+' つ追加':'')+(r.newStudents?'、生徒を '+r.newStudents+' 人追加':'')+'しました。');
   });
 

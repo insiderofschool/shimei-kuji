@@ -22,6 +22,7 @@
 - 公開 URL: https://insiderofschool.github.io/shimei-kuji/ （main ブランチのルートから配信。push すると数十秒〜数分で反映される）
 - コミット者のメールは GitHub の noreply アドレス（リポジトリローカルの git config）。実メールをコミットに入れない。
 - 公開ページはアプリ本体を配るだけ。名簿・記録はこれまでどおり各端末の localStorage にだけ残る。
+- 利用者の PC のデスクトップに公開 URL への `.url` ショートカットを置いてある（2026-11-12）。アイコンは `%LOCALAPPDATA%\shimei-kuji\icon.ico`（ビンゴ球の絵、PowerShell の System.Drawing で生成）。
 
 ## 守ること
 
@@ -31,12 +32,14 @@
 - `alert` / `confirm` / `prompt` は使わない。確認は「2回押して実行」するボタン（`armed()`）で行う。
 - 後ろの席から読める文字の大きさを保つ。ライト・ダークの両テーマで読めること。
 - 「少なめ」設定は配慮が必要な生徒のためのもの。プロジェクターに映る名簿一覧には印を出さない（名簿編集の中だけで見える）。
+- 選び方（モード）も生徒に分からないようにする。モードの選択は名簿編集の中に置き、ふだんの画面には「出席 N人」と累計だけを出す。「済」「最近」の印と一巡の残り人数は `state.showMarks`（既定 false）が true のときだけ表示する。
 
 ## データ構造
 
 ```
 state = {
   current: クラスID,
+  showMarks: 済・最近の印と残り人数を名簿に出すか（既定 false）,
   classes: [{
     id, name,
     mode: "round" | "weight" | "random",
