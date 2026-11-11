@@ -7,7 +7,7 @@
 
 - iPad または PC。基本は毎回同じ端末だが、どちらも使う。
 - そのため、タッチ操作で押しやすい大きさ（ボタン・名前チップは44px以上）と、iPad の Safari・PC の Chrome / Edge の両方で動くことが必須。
-- iPad ではファイルを直接開く運用が難しいので、URLで開ける置き場所（GitHub Pages など）を用意するのが次の課題。記録は端末ごとに別々になる点を利用者に伝えてある。
+- iPad ではファイルを直接開く運用が難しいので、GitHub Pages で公開して URL から開く（下記「公開」）。記録は端末ごとに別々になる点を利用者に伝えてある。
 
 ## 構成
 
@@ -15,6 +15,13 @@
 - 外部から読み込むのは Google Fonts（Zen Maru Gothic / Zen Kaku Gothic New）のみ。ライブラリは使っていない。
 - データは `localStorage` のキー `shimei-kuji-v1` に JSON で保存。
 - `.claude/launch.json` の `shimei` は、Claude Code のブラウザペインで確認するための簡易静的サーバー（アプリ本体には不要）。
+
+## 公開（GitHub Pages）
+
+- リポジトリ: https://github.com/insiderofschool/shimei-kuji （パブリック）
+- 公開 URL: https://insiderofschool.github.io/shimei-kuji/ （main ブランチのルートから配信。push すると数十秒〜数分で反映される）
+- コミット者のメールは GitHub の noreply アドレス（リポジトリローカルの git config）。実メールをコミットに入れない。
+- 公開ページはアプリ本体を配るだけ。名簿・記録はこれまでどおり各端末の localStorage にだけ残る。
 
 ## 守ること
 
@@ -71,4 +78,4 @@ state = {
 
 ## 次の候補
 
-README の「今後の候補」を参照。最優先は iPad から URL で開けるようにすること（GitHub Pages など）。
+README の「今後の候補」を参照。GitHub Pages での公開は 2026-11-11 に済んだ。
