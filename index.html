@@ -209,12 +209,14 @@ table.rec{width:100%;border-collapse:collapse;font-size:.9rem}
       </div>
 
       <div id="backup" class="sub">
-        <label for="backupText">記録はこのブラウザの中だけに保存されます。別の端末へ移すときは、下の文字列をコピーして、移し先のこの欄に貼り付けて「読み込む」を押してください。</label>
+        <label for="backupText">記録はこのブラウザの中だけに保存されます。別の端末へ移すときは、下の文字列をコピーして、移し先のこの欄に貼り付けて読み込んでください。</label>
         <textarea id="backupText" spellcheck="false" style="min-height:100px"></textarea>
         <div class="row">
           <button class="btn" id="copyBackup" type="button">コピーする</button>
-          <button class="btn" id="loadBackup" type="button">読み込む</button>
+          <button class="btn" id="mergeBackup" type="button">今の記録に合わせる</button>
+          <button class="btn danger" id="loadBackup" type="button">置き換えて読み込む</button>
         </div>
+        <p class="muted" style="margin:0">「今の記録に合わせる」は、貼り付けた記録のうちこの端末にないものだけを足します（同じ日時・同じ生徒の記録は二重になりません）。クラスと生徒は名前で対応づけます。「置き換えて読み込む」はこの端末の名簿と記録を貼り付けた内容に丸ごと置き換えます。</p>
       </div>
       <p id="msg" role="status"></p>
     </section>
@@ -473,6 +475,37 @@ table.rec{width:100%;border-collapse:collapse;font-size:.9rem}
     }catch(e){copyText($('recordsText'),toTSV(rows),'表');}
   }
 
+  // バックアップを今の状態に足し合わせる。クラスと生徒は名前で対応づけ、記録は「日時＋生徒名」が同じものを二重にしない。
+  // 既存の累計回数はそのままにして、新しく足した記録のぶんだけ増やす（記録のない古いデータでも回数が減らない）。
+  function mergeState(cur,inc){
+    var added=0,newClasses=0,newStudents=0;
+    inc.classes.forEach(function(ic){
+      var c=cur.classes.filter(function(k){return k.name===ic.name})[0];
+      if(!c){cur.classes.push(ic);newClasses++;added+=ic.history.length;return}
+      var map={};   // 相手側の生徒ID → こちらの生徒
+      ic.students.forEach(function(is){
+        var s=c.students.filter(function(x){return x.name===is.name})[0];
+        if(!s){s={id:uid(),name:is.name,count:0,done:false,absent:is.absent,care:is.care};c.students.push(s);newStudents++}
+        map[is.id]=s;
+      });
+      var seen={};c.history.forEach(function(h){seen[h.t+'|'+histName(c,h)]=1});
+      var merged=c.history.slice();
+      ic.history.forEach(function(h){
+        var s=map[h.s], nm=s?s.name:(h.n||'');
+        var key=h.t+'|'+nm;
+        if(seen[key])return;
+        seen[key]=1;added++;
+        merged.push({s:s?s.id:h.s,n:nm,t:h.t});
+        if(s)s.count++;
+      });
+      merged.sort(function(a,b){return a.t-b.t});
+      c.history=merged.slice(-HISTORY_MAX);
+      c.log=c.history.slice(-30).map(function(h){return h.s});
+      if(!ic.sample)c.sample=false;
+    });
+    return {added:added,newClasses:newClasses,newStudents:newStudents};
+  }
+
   // 2回押して確定するボタン（確認ダイアログの代わり）
   function armed(btn,fn){
     var label=btn.textContent,timer=null;
@@ -544,9 +577,17 @@ table.rec{width:100%;border-collapse:collapse;font-size:.9rem}
   $('saveTable').addEventListener('click',function(){var c=cls();downloadCSV('指名回数_'+c.name,matrixRows(c,function(t){return fmtDate(new Date(t))}))});
   $('saveHistory').addEventListener('click',function(){var c=cls();downloadCSV('指名記録_'+c.name,historyRows(c))});
   $('copyBackup').addEventListener('click',function(){copyText($('backupText'),JSON.stringify(state),'バックアップ')});
+  function parseBackup(){try{var s=JSON.parse($('backupText').value);return valid(s)?normalize(s):null}catch(e){return null}}
   armed($('loadBackup'),function(){
-    try{var s=JSON.parse($('backupText').value);if(!valid(s))throw 0;state=normalize(s);undoStack=[];lastId=null;save();resetStage();render();say('読み込みました。')}
-    catch(e){say('読み込めませんでした。コピーした文字列を最初から最後まで貼り付けてください。')}
+    var s=parseBackup();
+    if(!s){say('読み込めませんでした。コピーした文字列を最初から最後まで貼り付けてください。');return}
+    state=s;undoStack=[];lastId=null;save();resetStage();render();say('置き換えて読み込みました。');
+  });
+  armed($('mergeBackup'),function(){
+    var s=parseBackup();
+    if(!s){say('読み込めませんでした。コピーした文字列を最初から最後まで貼り付けてください。');return}
+    var r=mergeState(state,s);undoStack=[];lastId=null;save();resetStage();render();
+    say('合わせました。記録を '+r.added+' 件追加'+(r.newClasses?'、クラスを '+r.newClasses+' つ追加':'')+(r.newStudents?'、生徒を '+r.newStudents+' 人追加':'')+'しました。');
   });
 
   render();
