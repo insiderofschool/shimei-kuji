@@ -100,8 +100,8 @@ main{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:16px;
 .chip.cool{border-style:dashed;color:var(--muted)}
 .chip.cool::after{content:"最近";position:absolute;right:7px;bottom:5px;font-size:.7rem;color:var(--muted)}
 .chip.last{outline:3px solid var(--chalk)}
-.chip.care{background:#f5e3dc;background:color-mix(in srgb,var(--warn) 14%,var(--surface));border-color:var(--warn)}
-.chip.care::after{content:"少なめ";position:absolute;right:7px;bottom:5px;font-size:.7rem;color:var(--warn)}
+.chip.care{border-color:var(--muted)}
+.chip.care::after{content:"";position:absolute;right:8px;bottom:8px;width:7px;height:7px;border-radius:50%;background:var(--muted)}
 .legend{font-size:.8rem;color:var(--muted);margin:0}
 label.check{display:flex;gap:8px;align-items:flex-start;font-size:.875rem;color:var(--ink);cursor:pointer;flex:1 1 260px;min-height:44px}
 label.check input{width:22px;height:22px;margin:2px 0 0;flex:none}
@@ -188,9 +188,14 @@ table.rec{width:100%;border-collapse:collapse;font-size:.9rem}
           <input type="number" id="numCount" min="1" max="60" value="40" style="width:80px">
           <button class="btn" id="makeNumbers" type="button">人数分の番号を入れる</button>
         </div>
-        <h3>当たる回数を少なめにする生徒</h3>
-        <p class="muted" style="margin:0">押すと切り替わります。少なめにした生徒は、ほかの生徒のおよそ半分の回数になります（一巡モードでは一巡ごとに半分の確率で見送り、回数バランスモードでは1回を2回ぶんとして数えます）。この設定は名簿の一覧には表示されません。</p>
-        <div class="chips" id="careChips"></div>
+        <div class="row">
+          <button class="btn" id="careBtn" type="button" aria-expanded="false" aria-controls="careBox">個別の設定</button>
+          <span class="muted">（生徒には見せない設定。押したときだけ開きます）</span>
+        </div>
+        <div id="careBox" class="sub" style="border-top:0;padding-top:0">
+          <p class="muted" style="margin:0">ここで押した生徒は、当たる回数がほかの生徒のおよそ半分になります。もう一度押すと戻ります。印は右下の小さな点だけで、この欄を閉じると見えません。メッセージも出ません。</p>
+          <div class="chips" id="careChips"></div>
+        </div>
         <div class="row">
           <button class="btn danger" id="resetCounts" type="button">回数と記録をすべて消す</button>
           <button class="btn danger" id="delClass" type="button">このクラスを削除</button>
@@ -433,9 +438,8 @@ table.rec{width:100%;border-collapse:collapse;font-size:.9rem}
       var b=document.createElement('button');b.type='button';
       b.className='chip'+(s.care?' care':'');
       b.setAttribute('aria-pressed',s.care?'true':'false');
-      b.title=s.care?'少なめ。押すとふつうに戻します':'押すと少なめにします';
       chipLabel(b,s);
-      b.addEventListener('click',function(){s.care=!s.care;save();renderCare();say(label(s)+' を'+(s.care?'「少なめ」にしました。':'ふつうに戻しました。'))});
+      b.addEventListener('click',function(){s.care=!s.care;save();renderCare();say('')});   // 生徒に見えないよう、メッセージは出さない
       box.appendChild(b);
     });
   }
@@ -560,6 +564,7 @@ table.rec{width:100%;border-collapse:collapse;font-size:.9rem}
     var open=force!==undefined?force:!isOpen(id);
     Object.keys(subs).forEach(function(k){var on=k===id&&open;$(k).classList.toggle('open',on);$(subs[k]).setAttribute('aria-expanded',on?'true':'false')});
     if(open&&id==='editor')fillEditor();
+    if(id==='editor'){$('careBox').classList.remove('open');$('careBtn').setAttribute('aria-expanded','false')}   // 個別の設定は毎回閉じた状態で開く
     if(open&&id==='records')renderRecords();
     if(open&&id==='backup')$('backupText').value=JSON.stringify(state);
     return open;
@@ -587,6 +592,7 @@ table.rec{width:100%;border-collapse:collapse;font-size:.9rem}
     say('クラスを追加しました。クラス名を入力して「名前を変更」、名簿を貼り付けて「名簿を保存」を押してください。');$('className').focus();$('className').select();
   });
   $('editBtn').addEventListener('click',function(){openSub('editor')});
+  $('careBtn').addEventListener('click',function(){var o=$('careBox').classList.toggle('open');$('careBtn').setAttribute('aria-expanded',o?'true':'false');if(o)renderCare()});
   $('recordsBtn').addEventListener('click',function(){openSub('records')});
   $('backupBtn').addEventListener('click',function(){openSub('backup')});
   $('saveRoster').addEventListener('click',function(){
